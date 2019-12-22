@@ -1,0 +1,10 @@
+kmax = 30
+lmax = 30
+dt = 1e-6
+Pr = 0.1
+Rrho = 1.1
+tho = 0.5
+iter = 1e3
+restart = 0
+method = RK4
+	
