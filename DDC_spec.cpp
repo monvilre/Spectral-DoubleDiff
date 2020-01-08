@@ -1,4 +1,4 @@
-//~ #define NDEBUG
+#define NDEBUG
 
 #include <complex.h>
 #include <fftw3.h>
@@ -13,12 +13,17 @@
 using namespace Eigen;
 using namespace std;
 
-ArrayXXcd K,L,KKLL;
+ArrayXXd K,L,KKLL;
+ArrayXXcd ikU,ilU,ikW,ilW,ikT,ilT,ikS,ilS;
+ArrayXXcd grU,grW,grT,grS;
+
 double Pr,Rrho,tho,dt;
 int restart;
 string method;
 fftw_plan plan;
 fftw_plan iplan;
+complex<double> II(0,1);
+
 
 void write_binary(const char* filename, ArrayXXcd matrix){
     std::ofstream out(filename, std::ios::out | std::ios::binary | std::ios::trunc);
@@ -40,86 +45,88 @@ ArrayXXcd read_binary(const char* filename, ArrayXXcd matrix){
     return matrix;
 }
 
-ArrayXXcd f_U(ArrayXXcd U,ArrayXXcd W,ArrayXXcd T,ArrayXXcd S){
-	ArrayXXcd U_dt;
-	ArrayXXcd ifU =U;
-	fftw_execute_dft(iplan, (fftw_complex*) U.data(), (fftw_complex*) ifU.data());
+ArrayXXcd f_U(ArrayXXcd U,ArrayXXcd W){
+	ikU = II*K*U;
+	ilU = II*L*U;
+	ArrayXXcd ifU = U;
 	ArrayXXcd ifW = W;
-	fftw_execute_dft(iplan, (fftw_complex*) W.data(), (fftw_complex*) ifW.data());
 	ArrayXXcd ifdxU = U;
-	ArrayXXcd ikU = I*K*U;
-	fftw_execute_dft(iplan, (fftw_complex*) ikU.data(), (fftw_complex*) ifdxU.data());
 	ArrayXXcd ifdyU = U;
-	ArrayXXcd ilU = I*L*U;
-	fftw_execute_dft(iplan, (fftw_complex*) ilU.data(), (fftw_complex*) ifdyU.data());
 	ArrayXXcd NLU = U;
-	ArrayXXcd grU = -ifU*ifdxU- ifW*ifdyU;
-	fftw_execute_dft(plan, (fftw_complex*) grU.data(), (fftw_complex*) NLU.data());
-	U_dt = -Pr*KKLL*U + NLU;
-	//~ U_dt = -Pr*KKLL*U;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(U.data()), reinterpret_cast<fftw_complex*>(ifU.data()));
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(W.data()), reinterpret_cast<fftw_complex*>(ifW.data()));
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ikU.data()), reinterpret_cast<fftw_complex*>(ifdxU.data()));
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ilU.data()), reinterpret_cast<fftw_complex*>(ifdyU.data()));
+	grU = (ifU*ifdxU)+(ifW*ifdyU);
+	fftw_execute_dft(plan, reinterpret_cast<fftw_complex*>(grU.data()), reinterpret_cast<fftw_complex*>(NLU.data()));
+	
+	ArrayXXcd U_dt = -Pr*KKLL*U - NLU;
+	
+	
+
 return U_dt;
 }
 
 ArrayXXcd f_W(ArrayXXcd U,ArrayXXcd W,ArrayXXcd T,ArrayXXcd S){
-	ArrayXXcd W_dt;
-	ArrayXXcd ifU_w = W;
-	fftw_execute_dft(iplan, (fftw_complex*) U.data(), (fftw_complex*) ifU_w.data());
+	ArrayXXcd ifU = U;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(U.data()), reinterpret_cast<fftw_complex*>(ifU.data()));
 	ArrayXXcd ifW = W;
-	fftw_execute_dft(iplan, (fftw_complex*) W.data(), (fftw_complex*) ifW.data());
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(W.data()), reinterpret_cast<fftw_complex*>(ifW.data()));
 	ArrayXXcd ifdxW = W;
-	ArrayXXcd ikW = I*K*W;
-	fftw_execute_dft(iplan, (fftw_complex*) ikW.data(), (fftw_complex*) ifdxW.data());
+	ikW = II*K*W;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ikW.data()), reinterpret_cast<fftw_complex*>(ifdxW.data()));
 	ArrayXXcd ifdyW = W;
-	ArrayXXcd ilW = I*L*W;
-	fftw_execute_dft(iplan, (fftw_complex*) ilW.data(), (fftw_complex*) ifdyW.data());
+	ilW = II*L*W;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ilW.data()), reinterpret_cast<fftw_complex*>(ifdyW.data()));
 	ArrayXXcd NLW = W;
-	ArrayXXcd grW = -ifU_w*ifdxW- ifW*ifdyW;
-	fftw_execute_dft(plan, (fftw_complex*) grW.data(), (fftw_complex*) NLW.data());
-	W_dt = -Pr*(-T+S+KKLL*W) + NLW;
+	grW = (ifU*ifdxW)+(ifW*ifdyW);
+	fftw_execute_dft(plan, reinterpret_cast<fftw_complex*>(grW.data()), reinterpret_cast<fftw_complex*>(NLW.data()));
+	ArrayXXcd W_dt = -Pr*(-T+S+KKLL*W) - NLW;
+	
+	
 return W_dt;
 }
 
-ArrayXXcd f_T(ArrayXXcd U,ArrayXXcd W,ArrayXXcd T,ArrayXXcd S){
-	ArrayXXcd T_dt;
+ArrayXXcd f_T(ArrayXXcd U,ArrayXXcd W,ArrayXXcd T){
 	ArrayXXcd ifU =U;
-	fftw_execute_dft(iplan, (fftw_complex*) U.data(), (fftw_complex*) ifU.data());
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(U.data()), reinterpret_cast<fftw_complex*>(ifU.data()));
 	ArrayXXcd ifW = W;
-	fftw_execute_dft(iplan, (fftw_complex*) W.data(), (fftw_complex*) ifW.data());
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(W.data()), reinterpret_cast<fftw_complex*>(ifW.data()));
 	ArrayXXcd ifdxT = T;
-	ArrayXXcd ikT = I*K*T;
-	fftw_execute_dft(iplan, (fftw_complex*) ikT.data(), (fftw_complex*) ifdxT.data());
+	ikT = II*K*T;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ikT.data()), reinterpret_cast<fftw_complex*>(ifdxT.data()));
 	ArrayXXcd ifdyT = T;
-	ArrayXXcd ilT = I*L*T;
-	fftw_execute_dft(iplan, (fftw_complex*) ilT.data(), (fftw_complex*) ifdyT.data());
-	ArrayXXcd grT = -ifU*ifdxT- ifW*ifdyT;
+	ilT = II*L*T;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ilT.data()), reinterpret_cast<fftw_complex*>(ifdyT.data()));
+	grT = (ifU*ifdxT)+(ifW*ifdyT);
 	ArrayXXcd NLT = T;
-	fftw_execute_dft(plan, (fftw_complex*) grT.data(), (fftw_complex*) NLT.data());
-	T_dt = -T*KKLL - W +NLT;
+	fftw_execute_dft(plan, reinterpret_cast<fftw_complex*>(grT.data()), reinterpret_cast<fftw_complex*>(NLT.data()));
+	ArrayXXcd T_dt = -T*KKLL - W  -NLT;
 return T_dt;
 }
 
-ArrayXXcd f_S(ArrayXXcd U,ArrayXXcd W,ArrayXXcd T,ArrayXXcd S){
-	ArrayXXcd S_dt;
+ArrayXXcd f_S(ArrayXXcd U,ArrayXXcd W,ArrayXXcd S){
 	ArrayXXcd ifU =U;
-	fftw_execute_dft(iplan, (fftw_complex*) U.data(), (fftw_complex*) ifU.data());
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(U.data()), reinterpret_cast<fftw_complex*>(ifU.data()));
 	ArrayXXcd ifW = W;
-	fftw_execute_dft(iplan, (fftw_complex*) W.data(), (fftw_complex*) ifW.data());
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(W.data()), reinterpret_cast<fftw_complex*>(ifW.data()));
 	ArrayXXcd ifdxS = S;
-	ArrayXXcd ikS = I*K*S;
-	fftw_execute_dft(iplan, (fftw_complex*) ikS.data(), (fftw_complex*) ifdxS.data());
+	ikS = II*K*S;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ikS.data()), reinterpret_cast<fftw_complex*>(ifdxS.data()));
 	ArrayXXcd ifdyS = S;
-	ArrayXXcd ilS = I*L*S;
-	fftw_execute_dft(iplan, (fftw_complex*) ilS.data(), (fftw_complex*) ifdyS.data());
-	ArrayXXcd grS = -ifU*ifdxS- ifW*ifdyS;
+	ilS = II*L*S;
+	fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(ilS.data()), reinterpret_cast<fftw_complex*>(ifdyS.data()));
+	grS = (ifU*ifdxS)+(ifW*ifdyS);
 	ArrayXXcd NLS = S;
-	fftw_execute_dft(plan, (fftw_complex*) grS.data(), (fftw_complex*) NLS.data());
-	S_dt = -tho*S*KKLL - W/Rrho + NLS;
+	fftw_execute_dft(plan, reinterpret_cast<fftw_complex*>(grS.data()), reinterpret_cast<fftw_complex*>(NLS.data()));
+	ArrayXXcd S_dt = -tho*S*KKLL - W/Rrho - NLS;
 return S_dt;
 }
 
 
 int main(){
 
+//~ ############ Reading of .par file
 int kmax;
 int lmax;
 int iter;
@@ -169,95 +176,102 @@ if (cFile.is_open())
 else {
 	std::cerr << "Couldn't open config file for reading.\n";
 }
+//~ ############
 
-
-ArrayXcd vk;
-ArrayXcd vl;
-ArrayXcd v2k;
-ArrayXcd v2l;
+//~ ############ Prep K,L
+ArrayXd vk;
+ArrayXd vl;
+ArrayXd v2k;
+ArrayXd v2l;
 vk = ArrayXd::LinSpaced(kmax+1, 0, kmax);
 vl = ArrayXd::LinSpaced(lmax+1, 0, lmax);
 v2k = ArrayXd::LinSpaced(kmax, -kmax, -1);
 v2l = ArrayXd::LinSpaced(lmax, -lmax, -1);
 
-ArrayXcd VK(vk.size()+v2k.size()+1); 
-VK << vk,0,v2k;
-ArrayXcd VL(vl.size()+v2l.size()+1); 
-VL << vl,0,v2l;
+//~ ArrayXcd VK(vk.size()+v2k.size()+1); 
+//~ VK << vk,0,v2k;
+//~ ArrayXcd VL(vl.size()+v2l.size()+1); 
+//~ VL << vl,0,v2l;
 
+ArrayXd VK(vk.size()+v2k.size());
+VK << vk,v2k;
+ArrayXd VL(vl.size()+v2l.size()); 
+VL << vl,v2l;
 
+//~ I have replaced all kmax*2+2 with kmax*2+1, lamx too
 
-L = VL.replicate(1,kmax*2+2);
-K = VK.replicate(1,lmax*2+2).transpose();
+L = VL.replicate(1,kmax*2+1);
+K = VK.replicate(1,lmax*2+1).transpose();
 KKLL = K*K+L*L;
-//~ Initialisation
+//~ ############
+
+//~ ############ Initialisation fields
 
 ArrayXXcd U,W,T,S,TT;
 
-if (restart == 0){
-	U = ArrayXXcd::Constant(lmax*2+2,kmax*2+2,0);
-	TT = ArrayXXd::Random(lmax*2+2,kmax*2+2);
-	
-	W = ArrayXXcd::Constant(lmax*2+2,kmax*2+2,0);
-	//~ T = ArrayXXcd::Constant(lmax*2+2,kmax*2+2,0);
-	//~ W = ArrayXXcd::Random(lmax*2+2,kmax*2+2)*1e-2;
-	S = ArrayXXcd::Constant(lmax*2+2,kmax*2+2,0);
-	//~ TT.col(kmax+1) = 0;
-	//~ TT.row(lmax+1) = 0;
+	U = ArrayXXd::Random(lmax*2+1,kmax*2+1)*1e-6;
+	TT = ArrayXXd::Random(lmax*2+1,kmax*2+1)*1e-6;
+	W = ArrayXXcd::Constant(lmax*2+1,kmax*2+1,0);
+	S = ArrayXXcd::Constant(lmax*2+1,kmax*2+1,0);
 	T = TT;
 	
-std::ofstream fileS0("S0.txt");
-if (fileS0.is_open()){
-	fileS0 << T;
-}
-	
-}
-else if (restart == 1){
-	U = read_binary("U.dat",U);
-	W = read_binary("W.dat",W);
-	T = read_binary("T.dat",T);
-	S = read_binary("S.dat",S);
-	cout << "restart from previous field" << endl;
-}
-
-ArrayXXcd ProjKK = (K*K)/(K*K+L*L);
-ArrayXXcd ProjKL = (K*L)/(K*K+L*L);
-ArrayXXcd ProjLL = (L*L)/(K*K+L*L);
-ProjKK = (ProjKK.isFinite()).select(ProjKK,0);
-ProjLL = (ProjLL.isFinite()).select(ProjLL,0);
-ProjKL = (ProjKL.isFinite()).select(ProjKL,0);
-
-// Prepartion for FFT
-int n[] = {kmax*2+2, lmax*2+2};
+//~ ############ Prepartion for FFT
+int n[] = {kmax*2+1, lmax*2+1};
 int howmany = 1;
 int idist = 0;
 int odist = 0;
 int istride = 1;
 int ostride = 1; 
 int *inembed = n, *onembed = n;
-int sign = -1; // -1 for fft 1 for ifft
 ArrayXXcd Ufft = U;
 
 plan =  fftw_plan_many_dft(2,n,howmany,
-                             (fftw_complex*) U.data(),inembed,
+                             reinterpret_cast<fftw_complex*>(U.data()),inembed,
                              istride, idist,
-                             (fftw_complex*) Ufft.data(), onembed,
+                             reinterpret_cast<fftw_complex*>(Ufft.data()), onembed,
                              ostride, odist,
-                             sign,FFTW_MEASURE);
+                             FFTW_FORWARD,FFTW_PATIENT);
 iplan =  fftw_plan_many_dft(2,n,howmany,
-                             (fftw_complex*) U.data(),inembed,
+                             reinterpret_cast<fftw_complex*>(U.data()),inembed,
                              istride, idist,
-                             (fftw_complex*) Ufft.data(), onembed,
+                             reinterpret_cast<fftw_complex*>(Ufft.data()), onembed,
                              ostride, odist,
-                             -sign,FFTW_MEASURE);
+                             FFTW_BACKWARD,FFTW_PATIENT);
                              
+U = ArrayXXcd::Constant(lmax*2+1,kmax*2+1,0);
 
+fftw_execute_dft(plan, reinterpret_cast<fftw_complex*>(TT.data()), reinterpret_cast<fftw_complex*>(T.data()));
 /////////
-U = ArrayXXcd::Constant(lmax*2+2,kmax*2+2,0);
 
-fftw_execute_dft(plan, (fftw_complex*) TT.data(), (fftw_complex*) T.data());
+//~ ############ Restart option
+if (restart == 1){
+	ArrayXXcd Uf,Wf,Tf,Sf;
+	Uf = read_binary("U.dat",Uf);
+	Wf = read_binary("W.dat",Wf);
+	Tf = read_binary("T.dat",Tf);
+	Sf = read_binary("S.dat",Sf);
+	U = Uf;
+	W = Wf;
+	T = Tf;
+	S = Sf;
+	cout << "restart from previous field" << endl;
+	
+}
+//~ ############
 
-//~ Runge_Kutta 4
+//~ ############ Def for projection
+
+ArrayXXd ProjKK = (K*K)/(K*K+L*L);
+ArrayXXd ProjKL = (K*L)/(K*K+L*L);
+ArrayXXd ProjLL = (L*L)/(K*K+L*L);
+ProjKK = (ProjKK.isFinite()).select(ProjKK,0);
+ProjLL = (ProjLL.isFinite()).select(ProjLL,0);
+ProjKL = (ProjKL.isFinite()).select(ProjKL,0);
+
+//~ ############
+
+
+//~ ############ Runge_Kutta 4
 if ( method.compare("RK4")  == 0){
 cout << "Pr= " << Pr << endl << "tau= " << tho << endl << "rrho= " << Rrho << endl;
 ArrayXXcd k1_U,k1_W,k1_T,k1_S,
@@ -269,37 +283,38 @@ ArrayXXcd k1_U,k1_W,k1_T,k1_S,
 std::ofstream energy;
 	energy.open ("energy.txt");
 	energy << "Energy, grow \n";
-	
+
+
+
 for (int i=0; i<iter; ++i){
-	double co = ((double)i+1)/ (double) iter * 100;
-	ArrayXXcd ener = sqrt(U*U+W*W).real();
+	double co = (static_cast<double> (i)+1)/ static_cast<double> (iter) * 100;
+	ArrayXXd ener = sqrt(U.real()*U.real()+W.real()*W.real());
 	
-	
-	
-	k1_U = f_U(U,W,T,S);
-	k1_W = f_W(U,W,T,S);
-	k1_T = f_T(U,W,T,S);
-	k1_S = f_S(U,W,T,S);
-	
-	k2_U = f_U(U + 0.5 * dt * k1_U,W+ 0.5 * dt * k1_W,T+ 0.5 * dt * k1_T, S+ 0.5 * dt * k1_S);
-	k2_W = f_W(U + 0.5 * dt * k1_U,W+ 0.5 * dt * k1_W,T+ 0.5 * dt * k1_T, S+ 0.5 * dt * k1_S);
-	k2_T = f_T(U + 0.5 * dt * k1_U,W+ 0.5 * dt * k1_W,T+ 0.5 * dt * k1_T, S+ 0.5 * dt * k1_S);
-	k2_S = f_S(U + 0.5 * dt * k1_U,W+ 0.5 * dt * k1_W,T+ 0.5 * dt * k1_T, S+ 0.5 * dt * k1_S);
 
-	k3_U = f_U(U + 0.5 * dt * k2_U,W+ 0.5 * dt * k2_W,T+ 0.5 * dt * k2_T, S+ 0.5 * dt * k2_S);
-	k3_W = f_W(U + 0.5 * dt * k2_U,W+ 0.5 * dt * k2_W,T+ 0.5 * dt * k2_T, S+ 0.5 * dt * k2_S);
-	k3_T = f_T(U + 0.5 * dt * k2_U,W+ 0.5 * dt * k2_W,T+ 0.5 * dt * k2_T, S+ 0.5 * dt * k2_S);
-	k3_S = f_S(U + 0.5 * dt * k2_U,W+ 0.5 * dt * k2_W,T+ 0.5 * dt * k2_T, S+ 0.5 * dt * k2_S);
+	k1_U = dt * f_U(U,W);
+	k1_W = dt * f_W(U,W,T,S);
+	k1_T = dt * f_T(U,W,T);
+	k1_S = dt * f_S(U,W,S);
 
-	k4_U = f_U(U + dt * k3_U,W+ dt * k3_W,T+ dt * k3_T, S+ dt * k3_S);
-	k4_W = f_W(U + dt * k3_U,W+ dt * k3_W,T+ dt * k3_T, S+ dt * k3_S);
-	k4_T = f_T(U + dt * k3_U,W+ dt * k3_W,T+ dt * k3_T, S+ dt * k3_S);
-	k4_S = f_S(U + dt * k3_U,W+ dt * k3_W,T+ dt * k3_T, S+ dt * k3_S);
+	k2_U = dt * f_U(U + k1_U/2,W + k1_W/2);
+	k2_W = dt * f_W(U + k1_U/2,W + k1_W/2,T + k1_T/2, S + k1_S/2);
+	k2_T = dt * f_T(U + k1_U/2,W + k1_W/2,T + k1_T/2);
+	k2_S = dt * f_S(U + k1_U/2,W + k1_W/2,S + k1_S/2);
 
-	U = U +(dt/6)*(k1_U+2*k2_U+2*k3_U+k4_U);
-	W = W +(dt/6)*(k1_W+2*k2_W+2*k3_W+k4_W);
-	T = T +(dt/6)*(k1_T+2*k2_T+2*k3_T+k4_T);
-	S = S +(dt/6)*(k1_S+2*k2_S+2*k3_S+k4_S);
+	k3_U = dt * f_U(U + k2_U/2,W + k2_W/2);
+	k3_W = dt * f_W(U + k2_U/2,W + k2_W/2,T + k2_T/2, S + k2_S/2);
+	k3_T = dt * f_T(U + k2_U/2,W + k2_W/2,T + k2_T/2);
+	k3_S = dt * f_S(U + k2_U/2,W + k2_W/2,S + k2_S/2);
+
+	k4_U = dt * f_U(U + k3_U,W + k3_W);
+	k4_W = dt * f_W(U + k3_U,W + k3_W,T+ k3_T, S+ k3_S);
+	k4_T = dt * f_T(U + k3_U,W + k3_W,T+ k3_T);
+	k4_S = dt * f_S(U + k3_U,W + k3_W,S+ k3_S);
+
+	U = U +(k1_U+2*k2_U+2*k3_U+k4_U)/6;
+	W = W +(k1_W+2*k2_W+2*k3_W+k4_W)/6;
+	T = T +(k1_T+2*k2_T+2*k3_T+k4_T)/6;
+	S = S +(k1_S+2*k2_S+2*k3_S+k4_S)/6;
 	
 	ndivU = U - (ProjKK*U + ProjKL*W);
 	ndivW = W - (ProjKL*U + ProjLL*W);
@@ -307,48 +322,91 @@ for (int i=0; i<iter; ++i){
 	U = ndivU;
 	W = ndivW;
 	double divu = (U*K+W*L).real().sum();
-	ArrayXXcd ener2 = sqrt(U*U+W*W).real();
-	double grow = (log(ener2/ener)/dt).real().maxCoeff();
-	energy << ener2.real().sum() << "," << grow << "\n" ;
-	cout << "\r" << co  << "%" << "  Energy : " << ener2.sum()  << "Grow : " << grow << "   div : " << divu << flush;
+	ArrayXXd ener2 = sqrt(U.real()*U.real()+W.real()*W.real());
+	double grow = (log(ener2.sum()/ener.sum())/dt);
+	energy << ener2.sum() << "," << grow << "\n" ;
+	cout << "\r" << co  << "%" << "   Energy : " << ener2.sum()  <<    "   Grow : " << grow << "   div : " << divu << "   dt:" << dt << flush;
 
 }
 }
+//~ ############
 
-//~ else if ( method.compare("RK2")  == 0){
-	//~ cout << "Pr= " << Pr << endl << "tau= " << tho << endl << "rrho= " << Rrho << endl;
-	//~ ArrayXXcd ndivU,ndivW,kU,kW,kT,kS;
+//~ ############ Runge Kutta 2
+else if ( method.compare("RK2")  == 0){
+	cout << "Pr= " << Pr << endl << "tau= " << tho << endl << "rrho= " << Rrho << endl;
+ArrayXXcd k1_U,k1_W,k1_T,k1_S,
+		k2_U,k2_W,k2_T,k2_S,
+		ndivU,ndivW;
+
+std::ofstream energy;
+	energy.open ("energy.txt");
+	energy << "Energy, grow \n";
+
+ArrayXXcd Ut,Wt,Tt,St,k2_Wt;
+ArrayXXd tU,tW,tT,tS;
+double tol = 1e-8;
+double time = 0;
+
+cout << "RK2 method " << endl;
+int i;
+for(i=iter; i--; ){
+	double co =  (static_cast<double> (i)+1) / static_cast<double> (iter) * 100;
+	ArrayXXd ener = sqrt(U.real()*U.real()+W.real()*W.real());
 	
-	//~ std::ofstream energy;
-	//~ energy.open ("energy.txt");
-	//~ energy << "Energy, grow \n";
 	
-	//~ for (int i=0; i<iter; ++i){
-		//~ double co = ((double)i+1)/ (double) iter * 100;
-		//~ ArrayXXcd ener = (W*W+U*U);
-		
-		//~ kU = U + dt/2*f_U(U,W,T,S);
-		//~ kW = W + dt/2*f_W(U,W,T,S);
-		//~ kT = T + dt/2*f_T(U,W,T,S);
-		//~ kS = S + dt/2*f_S(U,W,T,S);
-		//~ U = U+dt*f_U(kU,kW,kT,kS);
-		//~ W = W+dt*f_W(kU,kW,kT,kS);
-		//~ T = T+dt*f_T(kU,kW,kT,kS);
-		//~ S = S+dt*f_S(kU,kW,kT,kS);
-		
-		//~ ndivU = U - (ProjKK*U + ProjKL*W);
-		//~ ndivW = W - (ProjKL*U + ProjLL*W);
-		//~ U = ndivU;
-		//~ W = ndivW;
-		//~ double divu = (U*K+W*L).sum();
-		//~ ArrayXXcd ener2 = (W*W+U*U);
-		//~ double grow = (log((ener2-ener)/ener)/dt).sum();
-		//~ energy << ener2 << "," << grow << "\n" ;
-		//~ cout << "\r" << co  << "%" << "  Energy : " << ener2.sum()  << "Grow : " << grow << "   div : " << divu << flush;
-//~ }
-//~ }
+	k1_U = f_U(U,W);
+	k1_W = f_W(U,W,T,S);
+	k1_T = f_T(U,W,T);
+	k1_S = f_S(U,W,S);
 
+	k2_U = f_U(U + dt * 2*k1_U/3,W+ dt * 2*k1_W/3);
+	k2_W = f_W(U + dt * 2*k1_U/3,W+ dt * 2*k1_W/3,T +dt * 2*k1_T/3, S + dt * 2*k1_S/3);
+	k2_T = f_T(U + dt * 2*k1_U/3,W+ dt * 2*k1_W/3,T +dt * 2*k1_T/3);
+	k2_S = f_S(U + dt * 2*k1_U/3,W+ dt * 2*k1_W/3,S +dt * 2*k1_S/3);
+	
+	k2_Wt = f_W(U + dt *k1_U/3,W+ dt *k1_W/3,T +dt *k1_T/3, S + dt *k1_S/3);
+	Wt = W + dt/2 * (0.25*k1_W+0.75*k2_Wt);
+	
+	U = U + dt * (0.25*k1_U+0.75*k2_U);
+	W = W + dt * (0.25*k1_W+0.75*k2_W);
+	T = T + dt * (0.25*k1_T+0.75*k2_T);
+	S = S + dt * (0.25*k1_S+0.75*k2_S);
+	
+	//~ ####### Computing of stepsize
+	tW = (Wt-W).real();
+	tW = tW.abs();
+	dt = 0.9*dt*sqrt(tol/(2*tW.maxCoeff()));
+	
+	//~ #############
+	
+	ndivU = U - (ProjKK*U + ProjKL*W);
+	ndivW = W - (ProjKL*U + ProjLL*W);
+	
+	U = ndivU;
+	W = ndivW;
+	
+	time += dt;
+	//~ double divu = (U*K+W*L).real().sum();
+	ArrayXXd ener2 = sqrt(U.real()*U.real()+W.real()*W.real());
+	double grow = (log(ener2.sum()/ener.sum())/dt);
+	energy << ener2.sum() << "," << grow << "\n" ;
+	cout << "\r" << co  << "%" << "   Energy : " << ener2.sum()  <<    "   Grow : " << grow << "    dt = " << dt << "    time = " << time << flush;
+	
+}
+}
 
+//~ ############
+
+//~ ############ Saving files
+ArrayXXcd Ts,Ss,Ws,Us;
+Ts= T;
+Ss = S;
+Ws = W;
+Us = U;
+fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(T.data()), reinterpret_cast<fftw_complex*>(Ts.data()));
+fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(S.data()), reinterpret_cast<fftw_complex*>(Ss.data()));
+fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(W.data()), reinterpret_cast<fftw_complex*>(Ws.data()));
+fftw_execute_dft(iplan, reinterpret_cast<fftw_complex*>(U.data()), reinterpret_cast<fftw_complex*>(Us.data()));
 write_binary("U.dat",U);
 write_binary("W.dat",W);
 write_binary("T.dat",T);
@@ -357,18 +415,19 @@ cout << endl << "Saved Successfully" << endl;
 
 std::ofstream file("T.txt");
 if (file.is_open()){
-	file << T ;
+	file << Ts ;
 }
 
 std::ofstream fileS("S.txt");
 if (fileS.is_open()){
-	fileS << S;
+	fileS << Ss;
 }
 
 std::ofstream file4("W.txt");
 if (file4.is_open()){
-	file4 << W;
+	file4 << Ws;
 }
+//~ ############
 
 return 0;
 }
