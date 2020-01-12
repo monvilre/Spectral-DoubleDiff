@@ -1,10 +1,10 @@
-kmax = 150
-lmax = 150
+kmax = 250
+lmax = 250
 dt = 1e-6
 Pr = 7
-Rrho = 1.1
+Rrho = 2
 tho = 0.01
-iter = 1e4
-restart = 1
+iter = 0.02
+restart = 0
 method = RK2
 	

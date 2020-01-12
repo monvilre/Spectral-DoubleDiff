@@ -129,7 +129,7 @@ int main(){
 //~ ############ Reading of .par file
 int kmax;
 int lmax;
-int iter;
+double iter;
 std::ifstream cFile ("DDC.par");
 if (cFile.is_open())
 {
@@ -242,7 +242,10 @@ U = ArrayXXcd::Constant(lmax*2+1,kmax*2+1,0);
 
 fftw_execute_dft(plan, reinterpret_cast<fftw_complex*>(TT.data()), reinterpret_cast<fftw_complex*>(T.data()));
 /////////
-
+write_binary("U0.dat",U);
+write_binary("W0.dat",W);
+write_binary("T0.dat",T);
+write_binary("S0.dat",S);
 //~ ############ Restart option
 if (restart == 1){
 	ArrayXXcd Uf,Wf,Tf,Sf;
@@ -250,6 +253,20 @@ if (restart == 1){
 	Wf = read_binary("W.dat",Wf);
 	Tf = read_binary("T.dat",Tf);
 	Sf = read_binary("S.dat",Sf);
+	U = Uf;
+	W = Wf;
+	T = Tf;
+	S = Sf;
+	cout << "restart from previous field" << endl;
+	
+}
+
+if (restart == 2){
+	ArrayXXcd Uf,Wf,Tf,Sf;
+	Uf = read_binary("U0.dat",Uf);
+	Wf = read_binary("W0.dat",Wf);
+	Tf = read_binary("T0.dat",Tf);
+	Sf = read_binary("S0.dat",Sf);
 	U = Uf;
 	W = Wf;
 	T = Tf;
@@ -344,15 +361,17 @@ std::ofstream energy;
 
 ArrayXXcd Ut,Wt,Tt,St,k2_Wt;
 ArrayXXd tU,tW,tT,tS;
-double tol = 1e-8;
+double tol = 1e-7;
 double time = 0;
-
+double co,ener,ener2,grow;
 cout << "RK2 method " << endl;
 int i;
-for(i=iter; i--; ){
-	double co =  (static_cast<double> (i)+1) / static_cast<double> (iter) * 100;
-	ArrayXXd ener = sqrt(U.real()*U.real()+W.real()*W.real());
-	
+int cont = 0;
+double fin = iter;
+//~ for(i=iter; i--; ){
+while(cont == 0){
+	co =  time/fin * 100;
+	ener = (sqrt(abs2(U)+abs2(W))).sum();
 	
 	k1_U = f_U(U,W);
 	k1_W = f_W(U,W,T,S);
@@ -387,11 +406,13 @@ for(i=iter; i--; ){
 	
 	time += dt;
 	//~ double divu = (U*K+W*L).real().sum();
-	ArrayXXd ener2 = sqrt(U.real()*U.real()+W.real()*W.real());
-	double grow = (log(ener2.sum()/ener.sum())/dt);
-	energy << ener2.sum() << "," << grow << "\n" ;
-	cout << "\r" << co  << "%" << "   Energy : " << ener2.sum()  <<    "   Grow : " << grow << "    dt = " << dt << "    time = " << time << flush;
-	
+	ener2 = (sqrt(abs2(U)+abs2(W))).sum();
+	grow = (log(ener2/ener)/dt);
+	energy << ener2 << "," << grow << "\n" ;
+	cout << "\r" << co  << "%" << "   Energy : " << ener2  <<    "   Grow : " << grow << "    dt = " << dt << "    time = " << time << flush;
+	if(time>iter){
+		cont = 1;
+	}
 }
 }
 
